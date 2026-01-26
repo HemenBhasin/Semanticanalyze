@@ -119,6 +119,246 @@ class SemanticReviewAnalyzer:
         
         return ' '.join(tokens)
     
+    def get_granular_sentiment_label(self, score: float) -> str:
+        """
+        Convert sentiment score (0-1) to granular sentiment label.
+        
+        Args:
+            score: Sentiment score between 0 and 1
+            
+        Returns:
+            Detailed sentiment label string
+        """
+        if score >= 0.90:
+            return "Very Positive"
+        elif score >= 0.80:
+            return "Highly Positive"
+        elif score >= 0.70:
+            return "Moderately Positive"
+        elif score >= 0.60:
+            return "Slightly Positive"
+        elif score >= 0.50:
+            return "Leaning Positive"
+        elif score >= 0.40:
+            return "Leaning Negative"
+        elif score >= 0.30:
+            return "Slightly Negative"
+        elif score >= 0.20:
+            return "Moderately Negative"
+        elif score >= 0.10:
+            return "Highly Negative"
+        else:
+            return "Very Negative"
+    
+    def detect_humor(self, text: str) -> Dict:
+        """
+        Detect humor, sarcasm, and irony in text.
+        
+        Args:
+            text: Input text to analyze
+            
+        Returns:
+            Dictionary with humor analysis results:
+            {
+                'has_humor': bool,
+                'humor_type': str (sarcasm/irony/exaggeration/wordplay/none),
+                'confidence': float (0-1),
+                'indicators': List[str],
+                'humorous_segments': List[str]
+            }
+        """
+        doc = self.nlp(text.lower())
+        text_lower = text.lower()
+        
+        # Humor indicators
+        sarcasm_patterns = [
+            'yeah right', 'sure', 'as if', 'oh great', 'just what i needed',
+            'wonderful', 'perfect', 'exactly what i wanted', 'fantastic',
+            'brilliant idea', 'oh wow', 'real genius', 'nice job'
+        ]
+        
+        exaggeration_words = [
+            'literally', 'absolutely', 'completely', 'totally', 'utterly',
+            'extremely', 'incredibly', 'unbelievably', 'ridiculously',
+            'insanely', 'mind-blowing', 'earth-shattering', 'world-ending'
+        ]
+        
+        irony_patterns = [
+            ('love', ['hate', 'terrible', 'awful', 'bad', 'worst']),
+            ('great', ['disappointing', 'failed', 'broken', 'useless']),
+            ('perfect', ['defective', 'broken', 'malfunctioned', 'crashed']),
+            ('excellent', ['poor', 'bad', 'terrible', 'awful'])
+        ]
+        
+        # Track indicators
+        indicators = []
+        humorous_segments = []
+        humor_score = 0.0
+        humor_type = 'none'
+        
+        # Check for sarcasm patterns
+        sarcasm_count = 0
+        for pattern in sarcasm_patterns:
+            if pattern in text_lower:
+                sarcasm_count += 1
+                indicators.append(f"Sarcasm: '{pattern}'")
+                humorous_segments.append(pattern)
+        
+        if sarcasm_count > 0:
+            humor_score += min(0.4, sarcasm_count * 0.2)
+            humor_type = 'sarcasm'
+        
+        # Check for exaggeration
+        exaggeration_count = sum(1 for word in exaggeration_words if word in text_lower)
+        if exaggeration_count >= 2:
+            humor_score += min(0.3, exaggeration_count * 0.1)
+            indicators.append(f"Exaggeration detected ({exaggeration_count} markers)")
+            if humor_type == 'none':
+                humor_type = 'exaggeration'
+        
+        # Check for irony (positive words with negative context)
+        for positive_word, negative_words in irony_patterns:
+            if positive_word in text_lower:
+                for neg_word in negative_words:
+                    if neg_word in text_lower:
+                        # Check if they're in proximity (within 10 words)
+                        pos_idx = text_lower.find(positive_word)
+                        neg_idx = text_lower.find(neg_word)
+                        if abs(pos_idx - neg_idx) < 50:  # Rough word proximity
+                            humor_score += 0.3
+                            indicators.append(f"Irony: '{positive_word}' near '{neg_word}'")
+                            humorous_segments.append(f"{positive_word}...{neg_word}")
+                            if humor_type == 'none':
+                                humor_type = 'irony'
+        
+        # Check for exclamation marks (often used sarcastically)
+        exclamation_count = text.count('!')
+        if exclamation_count >= 2:
+            humor_score += min(0.2, exclamation_count * 0.05)
+            indicators.append(f"Multiple exclamations ({exclamation_count})")
+        
+        # Check for ALL CAPS (sarcasm indicator)
+        caps_words = [token.text for token in doc if token.text.isupper() and len(token.text) > 2]
+        if caps_words:
+            humor_score += min(0.2, len(caps_words) * 0.1)
+            indicators.append(f"Emphasis caps: {', '.join(caps_words)}")
+        
+        # Normalize confidence score
+        confidence = min(1.0, humor_score)
+        has_humor = confidence > 0.2
+        
+        return {
+            'has_humor': has_humor,
+            'humor_type': humor_type if has_humor else 'none',
+            'confidence': confidence,
+            'indicators': indicators,
+            'humorous_segments': humorous_segments
+        }
+    
+    def detect_contradictions(self, text: str) -> Dict:
+        """
+        Detect contradictory statements in the text.
+        
+        Args:
+            text: Input text to analyze
+            
+        Returns:
+            Dictionary with contradiction analysis:
+            {
+                'has_contradictions': bool,
+                'contradiction_score': float (0-1),
+                'contradictory_pairs': List[Dict],
+                'sentiment_variance': float,
+                'contrast_markers': List[str]
+            }
+        """
+        doc = self.nlp(text)
+        
+        # Contrast markers
+        contrast_markers = [
+            'but', 'however', 'although', 'though', 'yet', 'except',
+            'despite', 'whereas', 'while', 'nevertheless', 'nonetheless',
+            'on the other hand', 'even though', 'in contrast', 'conversely',
+            'still', 'instead', 'unfortunately', 'sadly'
+        ]
+        
+        # Find all contrast markers in text
+        found_markers = []
+        for marker in contrast_markers:
+            if marker in text.lower():
+                found_markers.append(marker)
+        
+        # Split text at contrast markers
+        contradictory_pairs = []
+        sentiment_scores = []
+        
+        # Analyze each sentence
+        sentences = list(doc.sents)
+        for i, sent in enumerate(sentences):
+            sent_text = sent.text.strip()
+            
+            # Check if sentence contains contrast marker
+            has_contrast = any(marker in sent_text.lower() for marker in contrast_markers)
+            
+            if has_contrast:
+                # Split at the contrast marker
+                for marker in contrast_markers:
+                    if marker in sent_text.lower():
+                        parts = sent_text.lower().split(marker, 1)
+                        if len(parts) == 2:
+                            before_text = parts[0].strip()
+                            after_text = parts[1].strip()
+                            
+                            # Analyze sentiment of both parts
+                            if before_text and after_text:
+                                try:
+                                    before_sentiment = self._analyze_sentence_sentiment(before_text)
+                                    after_sentiment = self._analyze_sentence_sentiment(after_text)
+                                    
+                                    # Check if sentiments are opposite
+                                    score_diff = abs(before_sentiment['score'] - after_sentiment['score'])
+                                    
+                                    if score_diff > 0.3:  # Significant difference
+                                        contradictory_pairs.append({
+                                            'before': before_text,
+                                            'after': after_text,
+                                            'marker': marker,
+                                            'before_sentiment': before_sentiment,
+                                            'after_sentiment': after_sentiment,
+                                            'contrast_strength': score_diff
+                                        })
+                                        
+                                        sentiment_scores.extend([
+                                            before_sentiment['score'],
+                                            after_sentiment['score']
+                                        ])
+                                except Exception as e:
+                                    self.logger.warning(f"Error analyzing contradiction: {str(e)}")
+                        break
+        
+        # Calculate sentiment variance
+        if len(sentiment_scores) > 1:
+            sentiment_variance = float(np.var(sentiment_scores))
+        else:
+            sentiment_variance = 0.0
+        
+        # Calculate contradiction score
+        contradiction_score = 0.0
+        if contradictory_pairs:
+            # Base score on number and strength of contradictions
+            avg_strength = sum(pair['contrast_strength'] for pair in contradictory_pairs) / len(contradictory_pairs)
+            contradiction_score = min(1.0, (len(contradictory_pairs) * 0.3) + (avg_strength * 0.5))
+        
+        has_contradictions = contradiction_score > 0.2
+        
+        return {
+            'has_contradictions': has_contradictions,
+            'contradiction_score': contradiction_score,
+            'contradictory_pairs': contradictory_pairs,
+            'sentiment_variance': sentiment_variance,
+            'contrast_markers': found_markers
+        }
+    
     def extract_aspects(self, text: str) -> List[str]:
         """
         Enhanced aspect extraction using spaCy's POS tagging, dependency parsing, and pattern matching.
@@ -306,19 +546,131 @@ class SemanticReviewAnalyzer:
             
         return chunks
 
-    def _analyze_sentence_sentiment(self, text: str) -> tuple[float, str]:
+    def _analyze_sentence_sentiment(self, text: str) -> dict:
         """Analyze sentiment of a single sentence and return score and label."""
         try:
             # Skip very short texts that might be just punctuation or stopwords
             if len(text.split()) <= 2 and not any(c.isalpha() for c in text):
-                return 0.5, 'neutral'
+                return {'score': 0.5, 'label': 'neutral'}
                 
             result = self.sentiment_analyzer(text)[0]
-            score = result['score'] if result['label'] == 'POSITIVE' else 1 - result['score']
-            return score, result['label'].lower()
+            raw_score = result['score']
+            label = result['label']
+            
+            # Convert to 0-1 scale where 0=very negative, 1=very positive
+            if label == 'POSITIVE':
+                base_score = raw_score
+            else:
+                base_score = 1 - raw_score
+            
+            # --- Lexicon-Based Score Adjustment ---
+            # The model is often too confident (0.9 vs 0.1). We use keywords to
+            # force the score into intermediate ranges (Granular Sentiment).
+            
+            text_lower = text.lower()
+            doc = self.nlp(text_lower)
+            lemmas = set(token.lemma_ for token in doc)
+            
+            # 1. Neutral/Weak Terms (Target: 0.45 - 0.55)
+            # Phrases like "it is okay", "average", "fine", "decent" often get high positive scores
+            neutral_terms = {
+                'okay', 'ok', 'average', 'standard', 'fine', 'decent', 'acceptable', 
+                'adequate', 'passable', 'so-so', 'fair', 'mediocre'
+            }
+            if any(term in text_lower.split() for term in neutral_terms) or \
+               any(term in lemmas for term in neutral_terms):
+               # Dampen heavily towards neutral
+               base_score = 0.5 + (base_score - 0.5) * 0.3
+            
+            # 2. Moderate Negative (Target: 0.20 - 0.35)
+            # Words that mean "bad" but not "terrible"
+            mod_neg_terms = {
+                'disappointed', 'disappointing', 'poor', 'bad', 'issue', 'issues',
+                'problem', 'problems', 'weak', 'slow', 'confusing', 'hard', 'difficult',
+                'weird', 'strange', 'annoying', 'below expectations', 'unimpressed',
+                'lacking', 'flawed'
+            }
+            has_mod_neg = any(term in text_lower for term in mod_neg_terms) or \
+                          any(term in lemmas for term in mod_neg_terms)
+                          
+            # 3. Strong Negative (Target: 0.0 - 0.15)
+            strong_neg_terms = {
+                'terrible', 'awful', 'horrible', 'worst', 'garbage', 'trash', 'useless',
+                'hate', 'pathetic', 'disaster', 'nightmare', 'broken', 'dead'
+            }
+            has_strong_neg = any(term in text_lower for term in strong_neg_terms)
+            
+            # 4. Moderate Positive (Target: 0.65 - 0.80)
+            mod_pos_terms = {
+                'good', 'nice', 'cool', 'happy', 'satisfied', 'useful', 'helpful',
+                'solid', 'smooth', 'clean', 'pretty good', 'fun', 'worth'
+            }
+            has_mod_pos = any(term in text_lower for term in mod_pos_terms) or \
+                          any(term in lemmas for term in mod_pos_terms)
+
+            # 5. Strong Positive (Target: 0.85 - 1.0)
+            strong_pos_terms = {
+                'excellent', 'amazing', 'perfect', 'awesome', 'fantastic', 'superb',
+                'best', 'outstanding', 'brilliant', 'incredible', 'love', 'beautiful',
+                'gorgeous', 'masterpiece'
+            }
+            has_strong_pos = any(term in text_lower for term in strong_pos_terms)
+
+            # --- Logic to Override Model Confidence ---
+            
+            if has_strong_neg:
+                # Force into 0.0 - 0.15 range
+                base_score = min(0.15, base_score)
+                base_score = min(base_score, 0.1) # Push lower
+            
+            elif has_mod_neg:
+                # Force into 0.20 - 0.35 range
+                # If model thinks it's positive (e.g. "Below expectations" -> 0.9), flip it
+                if base_score > 0.5:
+                    base_score = 0.3 # Flip to negative
+                
+                # Clamp to range
+                base_score = max(0.2, min(0.35, base_score))
+                
+            elif has_strong_pos:
+                # Force into 0.85 - 1.0 range
+                base_score = max(0.85, base_score)
+                
+            elif has_mod_pos:
+                # Force into 0.65 - 0.80 range
+                # If model is super confident (0.99), pull it down
+                base_score = min(0.80, max(0.65, base_score))
+                
+                # If model thought it was negative, flip it (unlikely for these words but possible)
+                if base_score < 0.5:
+                    base_score = 0.65
+
+            # Intensity Modifiers
+            intensifiers = {'very', 'extremely', 'really', 'absolutely', 'completely', 'totally', 'highly'}
+            weakeners = {'slightly', 'somewhat', 'mostly', 'kind of', 'sort of', 'a bit', 'little'}
+            
+            has_intr = any(t in text_lower.split() for t in intensifiers)
+            has_weak = any(t in text_lower.split() for t in weakeners)
+            
+            if has_weak:
+                # Pull scores towards neutral (0.5)
+                if base_score > 0.5:
+                    base_score = max(0.55, base_score - 0.15) # e.g. 0.7 -> 0.55
+                else:
+                    base_score = min(0.45, base_score + 0.15) # e.g. 0.3 -> 0.45
+            
+            if has_intr:
+                 # Push scores away from neutral
+                if base_score > 0.5:
+                    base_score = min(0.98, base_score + 0.1)
+                else:
+                    base_score = max(0.02, base_score - 0.1)
+
+            return {'score': base_score, 'label': label.lower()}
+            
         except Exception as e:
             self.logger.warning(f"Error analyzing sentence '{text}': {str(e)}")
-            return 0.5, 'neutral'
+            return {'score': 0.5, 'label': 'neutral'}
 
     def _detect_sentiment_shift(self, doc) -> tuple[list, float, float]:
         """
@@ -387,7 +739,9 @@ class SemanticReviewAnalyzer:
                 continue
                 
             # Analyze chunk sentiment
-            score, label = self._analyze_sentence_sentiment(chunk)
+            sentiment_result = self._analyze_sentence_sentiment(chunk)
+            score = sentiment_result['score']
+            label = sentiment_result['label']
             
             # Weight chunks after contrast markers more heavily
             weight = 2.0 if is_contrast else 1.0
@@ -554,218 +908,36 @@ class SemanticReviewAnalyzer:
                 result['aspect_score'] = base_score
                 
             return result
-            negation_terms = {'no', 'not', 'none', 'never', 'nothing', 'nowhere', 'neither', 'nor', 
-                             'barely', 'hardly', 'scarcely', 'rarely', 'seldom', 'without'}
-            
-            contrast_terms = {'but', 'however', 'although', 'though', 'yet', 'except', 'despite', 
-                            'whereas', 'while', 'nevertheless', 'nonetheless', 'on the other hand',
-                            'even though', 'in contrast', 'conversely'}
-            
-            intensifiers = {
-                'very': 0.2, 'really': 0.2, 'extremely': 0.25, 'absolutely': 0.25,
-                'completely': 0.3, 'totally': 0.25, 'utterly': 0.3, 'highly': 0.2,
-                'remarkably': 0.25, 'exceptionally': 0.3, 'incredibly': 0.25,
-                'especially': 0.2, 'particularly': 0.2, 'seriously': 0.15
-            }
-            
-            diminishers = {
-                'slightly': 0.15, 'somewhat': 0.15, 'a bit': 0.1, 'a little': 0.1,
-                'marginally': 0.15, 'moderately': 0.15, 'partially': 0.1,
-                'fairly': 0.1, 'quite': 0.1, 'rather': 0.1
-            }
-            
-            # Sarcasm indicators
-            sarcasm_indicators = {
-                'as if', 'yeah right', 'sure', 'of course', 'obviously', 'clearly',
-                'wow', 'oh great', 'just what i needed', 'perfect', 'wonderful'
-            }
-            
-            # Initialize sentiment modifiers
-            negation_boost = 1.0
-            contrast_boost = 1.0
-            intensity_modifier = 1.0
-            sarcasm_detected = False
-            
-            # Check for negation patterns in the clause
-            for token in doc:
-                # Handle negation
-                if token.text in negation_terms or any(dep == 'neg' for dep in [child.dep_ for child in token.children]):
-                    negation_boost *= -1
-                
-                # Handle intensifiers and diminishers
-                if token.text in intensifiers:
-                    intensity_modifier += intensifiers[token.text]
-                elif token.text in diminishers:
-                    intensity_modifier -= diminishers[token.text]
-            
-            # Check for contrastive conjunctions
-            for sent in doc.sents:
-                sent_text = sent.text.lower()
-                if any(term in sent_text for term in contrast_terms):
-                    contrast_boost = 0.7  # Reduce confidence when contrast is present
-            
-            # Check for sarcasm
-            clause_lower = clause.lower()
-            sarcasm_detected = any(indicator in clause_lower for indicator in sarcasm_indicators)
-            
-            # Adjust score based on modifiers
-            if sarcasm_detected:
-                base_score = 1.0 - base_score  # Invert sentiment for sarcasm
-            
-            # Apply intensity modifier (cap between 0.1 and 2.0)
-            intensity_modifier = max(0.1, min(2.0, intensity_modifier))
-            
-            # Apply negation and contrast
-            adjusted_score = base_score * negation_boost * contrast_boost * intensity_modifier
-            
-            # Ensure score is within 0-1 range
-            adjusted_score = max(0.0, min(1.0, adjusted_score))
-            
-            # Calculate confidence based on modifiers and shift ratio
-            confidence = 0.8  # Base confidence
-            if abs(adjusted_score - 0.5) < 0.1:  # If close to neutral
-                confidence *= 0.8
-            
-            # Reduce confidence for mixed sentiment
-            confidence *= (1.0 - (shift_ratio * 0.5))
-            
-            # Determine sentiment label
-            if sarcasm_detected:
-                label = 'sarcastic'
-            elif adjusted_score > 0.6:
-                label = 'positive'
-            elif adjusted_score < 0.4:
-                label = 'negative'
-            else:
-                label = 'neutral'
-            
-            # If analyzing a specific aspect
-            if aspect:
-                # Check if aspect is mentioned in this clause
-                aspect_terms = aspect.lower().split()
-                aspect_found = any(any(token.text == term for term in aspect_terms) for token in doc)
-                if not aspect_found:
-                    return {'score': 0.5, 'label': 'neutral', 'confidence': 0.0, 'text': clause.strip()}
-                
-                # Analyze with aspect focus
-                result = self.sentiment_analyzer(f"{clause} [ASPECT: {aspect}]")[0]
-            else:
-                result = self.sentiment_analyzer(clause)[0]
-            
-            # Get base score and adjust for negation/intensifiers
-            score = float(result['score'])
-            original_label = result['label']
-            
-            # Check for negation patterns and negative sentiment words
-            has_negation = any(token.text in negation_terms for token in doc)
-            has_contrast = any(token.text in contrast_terms for token in doc)
-            
-            # List of strong negative words that should always indicate negative sentiment
-            strong_negative_words = {
-                'terrible', 'awful', 'horrible', 'disappointing', 'poor', 'bad', 
-                'worst', 'garbage', 'trash', 'useless', 'waste', 'rubbish', 'pathetic',
-                'disappointed', 'frustrated', 'annoyed', 'angry', 'hate', 'dislike'
-            }
-            
-            # Check for strong negative words in the text
-            strong_negative_context = any(
-                token.lemma_.lower() in strong_negative_words 
-                for token in doc
-            )
-            
-            # Adjust score based on context
-            if strong_negative_context:
-                # If we have strong negative words, ensure the score reflects negative sentiment
-                score = min(0.3, score)  # Cap at 0.3 to ensure negative classification
-            
-            # Handle negation
-            if has_negation:
-                # For negative contexts, we need to be more aggressive with sentiment inversion
-                if original_label == 'POSITIVE':
-                    # If the model thought it was positive but we have negation, make it strongly negative
-                    score = 0.2  # Force negative sentiment
-                else:
-                    # For already negative sentiment with negation, it might be a double negative
-                    # or reinforcement of negativity
-                    score = max(0.0, 1.0 - score - 0.3)  # Invert and shift more negative
-            
-            # Adjust for intensifiers and diminishers
-            for token in doc:
-                if token.text in intensifiers:
-                    if score > 0.5:  # Positive sentiment
-                        score = min(1.0, score + 0.1)
-                    else:  # Negative sentiment
-                        score = max(0.0, score - 0.1)
-                elif token.text in diminishers:
-                    # Move score towards neutral
-                    score = 0.5 + (score - 0.5) * 0.7
-            
-            # Calculate confidence
-            base_confidence = abs(score - 0.5) * 2  # 0-1 range
-            
-            # Strong sentiment words
-            strong_negative = any(
-                token.lemma_.lower() in {
-                    'terrible', 'awful', 'horrible', 'disappointing', 'poor', 'bad', 
-                    'worst', 'garbage', 'trash', 'useless', 'waste', 'rubbish', 'pathetic'
-                } 
-                for token in doc
-            )
-            
-            strong_positive = any(
-                token.lemma_.lower() in {
-                    'excellent', 'amazing', 'outstanding', 'perfect', 'great',
-                    'awesome', 'fantastic', 'superb', 'wonderful', 'brilliant'
-                } 
-                for token in doc
-            )
-            
-            # Boost confidence for strong sentiment words
-            if strong_negative:
-                base_confidence = min(1.0, base_confidence * 1.3)
-                # Ensure strong negative words push the score lower
-                if score > 0.5:
-                    score = 0.5 - (score - 0.5)  # Invert the positive score
-            
-            if strong_positive:
-                base_confidence = min(1.0, base_confidence * 1.2)
-            
-            # Adjust confidence based on clause length and complexity
-            clause_length = len([token for token in doc if not token.is_punct])
-            if clause_length > 15:  # Longer clauses might have mixed sentiment
-                base_confidence *= 0.9
-            
-            # Determine final label with adjusted thresholds
-            if strong_negative_context and not strong_positive:
-                # If we have strong negative context and no strong positive, it's negative
-                label = 'negative'
-                score = min(score, 0.3)  # Ensure score reflects negative sentiment
-            elif strong_positive and not strong_negative_context:
-                # If we have strong positive context and no strong negative, it's positive
-                label = 'positive'
-                score = max(score, 0.7)  # Ensure score reflects positive sentiment
-            elif score > 0.6:
-                label = 'positive'
-            elif score < 0.4 or (has_negation and score < 0.6):
-                # Be more aggressive in marking negative with negation
-                label = 'negative'
-            else:
-                # For neutral range, check if we have mixed signals
-                if has_negation and has_contrast:
-                    label = 'mixed'
-                else:
-                    label = 'neutral'
-            
-            return {
-                'score': min(max(score, 0.0), 1.0),  # Ensure score is between 0 and 1
-                'label': label,
-                'confidence': min(max(base_confidence, 0.0), 1.0),  # Ensure confidence is between 0 and 1
-                'text': clause.strip()
-            }
             
         except Exception as e:
             self.logger.warning(f"Error analyzing clause: {str(e)}")
             return {'score': 0.5, 'label': 'neutral', 'confidence': 0.0, 'text': clause.strip()}
+    
+    def _get_aspect_weight(self, aspect: str) -> float:
+        """
+        Get importance weight for an aspect.
+        
+        Args:
+            aspect: The aspect to get weight for
+            
+        Returns:
+            Weight value between 0.5 and 1.5
+        """
+        # Default weight
+        weight = 1.0
+        
+        # Important aspects get higher weight
+        important_aspects = {
+            'quality', 'price', 'performance', 'battery', 'camera',
+            'screen', 'display', 'sound', 'audio', 'value'
+        }
+        
+        # Check if aspect contains any important keywords
+        aspect_lower = aspect.lower()
+        if any(keyword in aspect_lower for keyword in important_aspects):
+            weight = 1.3
+        
+        return weight
 
     def analyze_sentiment(self, text: str, aspect: str = None) -> Dict:
         """
@@ -811,10 +983,31 @@ class SemanticReviewAnalyzer:
                     try:
                         # Get base sentiment of the context
                         result = self.sentiment_analyzer(context_text)[0]
-                        base_score = result['score']
+                        base_score = float(result['score'])
                         
-                        # Adjust for contrast and context
-                        adjusted_score = self._adjust_for_context(doc, base_score, pos, aspect)
+                        # Normalize score (Handle model output which is 0.5-1.0 confidence)
+                        if result['label'] == 'NEGATIVE':
+                             base_score = 1.0 - base_score
+                        
+                        # Adjust for negation in context
+                        negation_terms = {'not', 'no', 'never', "n't", 'hardly', 'barely'}
+                        has_negation = any(t.text.lower() in negation_terms for t in context_span)
+                        
+                        if has_negation:
+                            # Invert sentiment if negation is present
+                            # But only if the model didn't catch it (simple heuristic)
+                            # Actually, text-classification models usually catch negation.
+                            # But sometimes with aspect slicing it misses.
+                            pass # Rely on model for now, but ensure score is normalized
+                        
+                        adjusted_score = base_score
+                        
+                        # Check for contrast ("good but expensive")
+                        # If contrast is present, reduce confidence slightly as it's mixed
+                        if contrast_data: # contrast_data is is_contrastive boolean
+                             # If we are in the "but ..." part, we might want to boost importance?
+                             # For now, just pass the score through.
+                             pass
                         
                         # Calculate confidence based on score distance from neutral and context length
                         confidence = abs(adjusted_score - 0.5) * 2
@@ -952,7 +1145,7 @@ class SemanticReviewAnalyzer:
                     'clauses_analyzed': 1
                 }
             
-            # Calculate sentiment with contrast awareness
+            # Calculate sentiment strengths for mixed sentiment detection
             positive_scores = []
             negative_scores = []
             
@@ -960,31 +1153,26 @@ class SemanticReviewAnalyzer:
                 score = result['score']
                 weight = result['weight'] * result['confidence']
                 
-                if score > 0.5:  # Positive sentiment
+                if score > 0.5:
                     positive_scores.append((score, weight))
-                elif score < 0.5:  # Negative sentiment
-                    negative_scores.append((1 - score, weight))  # Invert to get positive magnitude
+                elif score < 0.5:
+                    negative_scores.append((1 - score, weight))
             
-            # Calculate average positive and negative strengths
             pos_strength = sum(s * w for s, w in positive_scores) / sum(w for _, w in positive_scores) if positive_scores else 0
             neg_strength = sum(s * w for s, w in negative_scores) / sum(w for _, w in negative_scores) if negative_scores else 0
             
-            # Calculate overall score considering both positive and negative aspects
-            if pos_strength > 0 and neg_strength > 0:
-                # When both positive and negative aspects are present, balance them
-                if pos_strength > neg_strength * 1.5:  # If positive is significantly stronger
-                    overall_score = 0.5 + (pos_strength * 0.5)  # 0.5 to 1.0 range
-                elif neg_strength > pos_strength * 1.5:  # If negative is significantly stronger
-                    overall_score = 0.5 - (neg_strength * 0.5)  # 0.0 to 0.5 range
-                else:
-                    # If they're relatively balanced, move towards neutral with a slight bias
-                    overall_score = 0.5 + ((pos_strength - neg_strength) * 0.25)
-            elif pos_strength > 0:
-                overall_score = 0.5 + (pos_strength * 0.5)  # 0.5 to 1.0 range
-            elif neg_strength > 0:
-                overall_score = 0.5 - (neg_strength * 0.5)  # 0.0 to 0.5 range
+            # Calculate weighted average score directly for accuracy
+            total_weighted_score = sum(r['score'] * r['weight'] * r['confidence'] for r in clause_results)
+            total_weight = sum(r['weight'] * r['confidence'] for r in clause_results)
+            
+            if total_weight > 0:
+                overall_score = total_weighted_score / total_weight
             else:
-                overall_score = 0.5  # Neutral if no clear sentiment
+                overall_score = 0.5
+                
+            # Additional check: If meaningful clauses exist but total_weight is somehow 0
+            if total_weight == 0 and clause_results:
+                 overall_score = sum(r['score'] for r in clause_results) / len(clause_results)
             
             # Calculate average confidence
             avg_confidence = sum(r['confidence'] * r['weight'] for r in clause_results) / sum(r['weight'] for r in clause_results)
@@ -1037,6 +1225,18 @@ class SemanticReviewAnalyzer:
         
         return dict(aspect_categories)
     
+    def _get_context_window(self, doc, index: int, window_size: int = 5) -> tuple:
+        """Get the context window around a token index."""
+        start = max(0, index - window_size)
+        end = min(len(doc), index + window_size + 1)
+        span = doc[start:end]
+        
+        # Check for contrastive terms in the window
+        contrast_terms = {'but', 'however', 'although', 'though', 'yet', 'except', 'despite'}
+        is_contrastive = any(token.text.lower() in contrast_terms for token in span)
+        
+        return span, is_contrastive, None
+
     def analyze_review(self, review_text: str) -> Dict:
         """
         Analyze a product review with enhanced context-aware sentiment analysis.
@@ -1078,21 +1278,34 @@ class SemanticReviewAnalyzer:
             doc = self.nlp(review_text)
             
             # Extract aspects with context
-            aspects = self.extract_aspects(preprocessed_text)
+            # Use raw review_text to preserve sentence structure for SpaCy
+            aspects = self.extract_aspects(review_text)
             
             # If no aspects found, use the whole review for sentiment
             if not aspects:
                 sentiment = self.analyze_sentiment(review_text)
+                granular_label = self.get_granular_sentiment_label(float(sentiment['score']))
+                # Calculate intensity
+                intensity = abs(float(sentiment['score']) - 0.5) * 2
+                
+                # Detect humor/contradictions even if no aspects
+                humor_analysis = self.detect_humor(review_text)
+                contradiction_analysis = self.detect_contradictions(review_text)
+                
                 return {
                     'review': review_text,
                     'overall_sentiment': {
                         'label': sentiment['label'],
+                        'granular_label': granular_label,
                         'score': float(sentiment['score']),
-                        'confidence': float(sentiment.get('confidence', 0.0))
+                        'confidence': float(sentiment.get('confidence', 0.0)),
+                        'intensity': intensity
                     },
+                    'humor_analysis': humor_analysis,
+                    'contradiction_analysis': contradiction_analysis,
                     'aspects': [],
-                    'key_phrases': [],
-                    'summary': 'No specific aspects found in the review.',
+                    'key_phrases': self.extract_key_phrases(review_text),
+                    'summary': 'General review (no specific aspects found).',
                     'contextual_sentences': []
                 }
             
@@ -1117,17 +1330,20 @@ class SemanticReviewAnalyzer:
                 }
                 
                 # Store context for debugging/insights
-                aspect_tokens = aspect.lower().split()
-                for i in range(len(doc) - len(aspect_tokens) + 1):
-                    if all(doc[i + j].text.lower() == aspect_tokens[j] for j in range(len(aspect_tokens))):
-                        context_span, is_contrastive, _ = self._get_context_window(doc, i, window_size=7)
-                        contextual_sentences.append({
-                            'aspect': aspect,
-                            'sentence': ' '.join([token.text for token in context_span]),
-                            'sentiment': sentiment_result,
-                            'position': i,
-                            'is_contrastive': is_contrastive
-                        })
+                try:
+                    aspect_tokens = aspect.lower().split()
+                    for i in range(len(doc) - len(aspect_tokens) + 1):
+                        if all(doc[i + j].text.lower() == aspect_tokens[j] for j in range(len(aspect_tokens))):
+                            context_span, is_contrastive, _ = self._get_context_window(doc, i, window_size=7)
+                            contextual_sentences.append({
+                                'aspect': aspect,
+                                'sentence': ' '.join([token.text for token in context_span]),
+                                'sentiment': sentiment_result,
+                                'position': i,
+                                'is_contrastive': is_contrastive
+                            })
+                except Exception as e:
+                    pass # Ignore context extraction errors to prevent failure
             
             # Generate key phrases and summary
             key_phrases = self.extract_key_phrases(review_text)
@@ -1139,10 +1355,21 @@ class SemanticReviewAnalyzer:
             confidences = []
             
             for aspect, data in aspect_sentiments.items():
+                current_weight = data['weight']
+                current_score = data['score']
+                
+                # Negativity Bias: Negative aspects often weigh more heavily on user satisfaction
+                if current_score < 0.45:
+                    current_weight *= 1.2
+                
+                # Extreme Bias: Very strong opinions (positive or negative) matter more
+                if abs(current_score - 0.5) > 0.4:
+                    current_weight *= 1.1
+                    
                 # Normalize score to [-0.5, 0.5] range for weighted average
-                normalized_score = (data['score'] - 0.5) * data['weight']
+                normalized_score = (current_score - 0.5) * current_weight
                 weighted_scores.append(normalized_score)
-                total_weight += data['weight']
+                total_weight += current_weight
                 confidences.append(data['confidence'])
             
             # Calculate final scores
@@ -1173,6 +1400,7 @@ class SemanticReviewAnalyzer:
                 aspect_results.append({
                     'aspect': aspect,
                     'sentiment': data['label'],
+                    'granular_sentiment': self.get_granular_sentiment_label(data['score']),
                     'score': data['score'],
                     'weight': data['weight'],
                     'confidence': data['confidence'],
@@ -1185,14 +1413,31 @@ class SemanticReviewAnalyzer:
                 reverse=True
             )
             
+            # Detect humor and sarcasm
+            humor_analysis = self.detect_humor(review_text)
+            
+            # Detect contradictions
+            contradiction_analysis = self.detect_contradictions(review_text)
+            
+            # Get granular sentiment label
+            granular_label = self.get_granular_sentiment_label(overall_sentiment['score'])
+            overall_sentiment['granular_label'] = granular_label
+            
+            # Calculate sentiment intensity (how far from neutral)
+            sentiment_intensity = abs(overall_sentiment['score'] - 0.5) * 2  # 0-1 scale
+            overall_sentiment['intensity'] = float(sentiment_intensity)
+            
             return {
                 'review': review_text,
                 'overall_sentiment': overall_sentiment,
                 'aspects': aspect_results,
                 'key_phrases': key_phrases,
                 'summary': summary,
-                'contextual_sentences': contextual_sentences[:5]  # For debugging
+                'contextual_sentences': contextual_sentences[:5],  # For debugging
+                'humor_analysis': humor_analysis,
+                'contradiction_analysis': contradiction_analysis
             }
+
             
         except Exception as e:
             self.logger.error(f"Error analyzing review: {str(e)}")
@@ -1210,6 +1455,37 @@ class SemanticReviewAnalyzer:
                 'summary': 'Analysis incomplete due to an error.',
                 'contextual_sentences': []
             }
+    
+    def extract_key_phrases(self, text: str) -> list[str]:
+        """Extract key phrases from text."""
+        try:
+            doc = self.nlp(text)
+            phrases = []
+            for chunk in doc.noun_chunks:
+                if len(chunk.text) > 3 and not chunk.root.is_stop:
+                    phrases.append(chunk.text)
+            return list(set(phrases))[:10]
+        except Exception as e:
+            self.logger.warning(f"Error extracting key phrases: {str(e)}")
+            return []
+    
+    def generate_summary(self, text: str, aspect_sentiments: dict) -> str:
+        """Generate a summary of the review."""
+        try:
+            if not aspect_sentiments:
+                return "General review with mixed sentiments."
+            
+            positive = sum(1 for data in aspect_sentiments.values() if data['score'] > 0.6)
+            negative = sum(1 for data in aspect_sentiments.values() if data['score'] < 0.4)
+            
+            if positive > negative:
+                return f"Mostly positive review mentioning {positive} favorable aspects."
+            elif negative > positive:
+                return f"Mostly negative review with {negative} critical aspects."
+            return "Mixed review with balanced feedback."
+        except Exception as e:
+            self.logger.warning(f"Error generating summary: {str(e)}")
+            return "Review analyzed successfully."
 
 # Singleton instance
 analyzer = SemanticReviewAnalyzer()
