@@ -12,25 +12,14 @@ from semantic_analyzer import analyzer
 import json
 
 test_cases = [
-    # conflicting aspects
-    ("The camera is great but the battery is terrible.", "Mixed (Negative Lean)"),
-    ("The battery is terrible but the camera is great.", "Mixed (Positive Lean)"),
-    
-    # Contradictory statements
-    ("I love the design but I hate the user interface.", "Mixed"),
-    ("It's a beautiful app but it crashes constantly.", "Mixed (Negative Lean)"),
-    ("The service was slow but the food was delicious.", "Mixed (Positive Lean)"),
-    
-    # Nuanced conflict
-    ("Good features, poor execution.", "Mixed (Negative Lean)"),
-    ("Expensive but worth it.", "Positive (Lean)"),
-    
-    # Simple aspectless
-    ("I want to like it but I can't.", "Negative")
+    # The specific failure case
+    ("The headphones have weak sound quality and feel uncomfortable. They look good, but I wouldn’t recommend them.", "Mixed (Negative Lean)"),
+    ("The headphones look great.", "Positive"),
+    ("It looks amazing", "Positive"),
 ]
 
-print(f"{'Text':<50} | {'Expected':<20} | {'Label':<15} | {'Score':<8} | {'Range'}")
-print("-" * 110)
+print(f"{'Text':<80} | {'Expected':<20} | {'Label':<15} | {'Score':<8} | {'Range'}")
+print("-" * 140)
 
 analyzer._initialize_aspect_patterns()
 
@@ -43,7 +32,7 @@ for text, expected in test_cases:
     # Check if contradictions were detected
     has_contradictions = result.get('contradiction_analysis', {}).get('has_contradictions', False)
     
-    print(f"{text:<50} | {expected:<20} | {label:<15} | {score*100:5.1f}%  | {granular}")
+    print(f"{text[:80]:<80} | {expected:<20} | {label:<15} | {score*100:5.1f}%  | {granular}")
     if has_contradictions:
         print(f"   [!] Contradiction Detected")
         

@@ -83,7 +83,7 @@ class SemanticReviewAnalyzer:
             (r'\b(performance|speed|processing|processor|cpu|gpu|ram|memory|storage|ssd|hard drive)\b', 'performance'),
             (r'\b(keyboard|trackpad|touchpad|mouse|input device)\b', 'input devices'),
             (r'\b(speaker|audio|sound|microphone|mic)\b', 'audio'),
-            (r'\b(design|build|looks|appearance|aesthetics)\b', 'design'),
+            (r'\b(design|build|looks?|appearance|aesthetics)\b', 'design'),
             (r'\b(port|usb|hdmi|thunderbolt|connector|jack|slot|sd card|headphone)\b', 'ports'),
             (r'\b(weight|lightweight|heavy|portability|size|dimension)\b', 'portability'),
             (r'\b(price|cost|value|worth|expensive|cheap|affordable)\b', 'price'),
@@ -430,13 +430,22 @@ class SemanticReviewAnalyzer:
                   not token.is_stop and 
                   not any(token.text in a for a in aspects)):
                 aspects.add(token.text.lower())
+                
+        # 4. Explicitly allow aspects from our regex patterns (handling verbs like "look")
+        text_lower = text.lower()
+        for pattern, _ in self.aspect_patterns:
+            matches = re.finditer(pattern, text_lower)
+            for match in matches:
+                # Add the matched text (e.g. "look", "looks", "design")
+                # We use the regex match directly
+                aspects.add(match.group(0))
         
         # Filter and clean aspects
         filtered_aspects = set()
         common_terms = {
             "product", "item", "thing", "something", "anything", "one", "way", 
             "time", "day", "people", "lot", "bit", "part", "kind", "sort",
-            "use", "make", "take", "give", "get", "like", "look", "see"
+            "use", "make", "take", "give", "get", "like", "see"
         }
         
         for aspect in aspects:

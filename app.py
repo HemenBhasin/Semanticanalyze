@@ -777,7 +777,7 @@ def main():
     
     col1, col2, col3 = st.columns([1, 1, 2])
     with col1:
-        analyze_btn = st.button("🚀 Analyze Review", use_container_width=True)
+        analyze_btn = st.button("🚀 Analyze Review", type="primary", use_container_width=True)
     with col2:
         clear_btn = st.button("🔄 Clear", use_container_width=True)
     
