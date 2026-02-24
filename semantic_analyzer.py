@@ -1387,6 +1387,18 @@ class SemanticReviewAnalyzer:
                 final_score = max(0.0, min(1.0, final_score))  # Clamp to [0, 1]
                 avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
                 
+                # NLP models often struggle with extremely short reviews ("Good", "Nice product")
+                # and assign them low confidence or neutral scores.
+                # In Indian e-commerce, these are overwhelmingly positive (usually 5-star).
+                # We apply a heuristic bump for short, positive-leaning inputs to fix the skewed rating mathematical averages.
+                words_in_review = list(filter(None, re.split(r'\W+', review_text.lower())))
+                if len(words_in_review) <= 5:
+                    positive_keywords = {"good", "nice", "awesome", "excellent", "super", "superb", "best", "great", "loved", "amazing", "perfect"}
+                    if any(word in positive_keywords for word in words_in_review):
+                        # Force a high positive score
+                        final_score = max(final_score, 0.85)
+                        avg_confidence = max(avg_confidence, 0.8)
+                
                 if final_score > 0.6:
                     label = 'positive'
                 elif final_score < 0.4:
@@ -1400,8 +1412,16 @@ class SemanticReviewAnalyzer:
                     'confidence': float(avg_confidence)
                 }
             else:
-                # Fallback to simple analysis if weighting fails
+                # Fallback to simple analysis if weighting fails (e.g. no aspects found)
                 overall_sentiment = self.analyze_sentiment(review_text)
+                
+                # Apply the same short-review heuristic to the fallback
+                words_in_review = list(filter(None, re.split(r'\W+', review_text.lower())))
+                if len(words_in_review) <= 5:
+                    positive_keywords = {"good", "nice", "awesome", "excellent", "super", "superb", "best", "great", "loved", "amazing", "perfect"}
+                    if any(word in positive_keywords for word in words_in_review):
+                        overall_sentiment['score'] = max(overall_sentiment.get('score', 0), 0.85)
+                        overall_sentiment['label'] = 'positive'
             
             # Format aspect results
             aspect_results = []
@@ -1496,5 +1516,22 @@ class SemanticReviewAnalyzer:
             self.logger.warning(f"Error generating summary: {str(e)}")
             return "Review analyzed successfully."
 
-# Singleton instance
-analyzer = SemanticReviewAnalyzer()
+    def analyze_batch(self, reviews: List[Dict]) -> List[Dict]:
+        """
+        Analyze a batch of reviews efficiently.
+        Args:
+            reviews: List of review dictionaries containing 'text' and other metadata
+        Returns:
+            List of dictionaries with original metadata plus analysis results
+        """
+        results = []
+        for review in reviews:
+            text = review.get('text', '')
+            if text:
+                try:
+                    analysis = self.analyze_review(text)
+                    combined = {**review, 'analysis': analysis}
+                    results.append(combined)
+                except Exception as e:
+                    self.logger.error(f"Error analyzing batch item: {str(e)}")
+        return results

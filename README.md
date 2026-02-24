@@ -4,23 +4,25 @@ A powerful, next-generation NLP tool for analyzing product reviews with granular
 
 ## 🚀 Key Features
 
+### 🌐 Live Cross-Platform Web Scraper
+- **Universal URL Support**: Paste a single Amazon link, and the engine dynamically fetches reviews.
+- **Auto-Matcher**: Automatically searches Yahoo for the equivalent product on Flipkart to scrape both platforms concurrently.
+- **Anti-Bot Defenses**: Headless Playwright integration with stealth scripts, ad-blocking, parallel tabs, and diverse sorting (Recent/Top) proxying to bypass rigorous e-commerce captchas.
+
 ### 🧠 Advanced Sentiment Engine
-- **10-Tier Granular Analysis**: Goes beyond positive/negative. Detects nuance on a 0-100% scale:
-    - *Very Positive (90-100%)* to *Very Negative (0-10%)*
-    - nuances like *Slightly Positive*, *Moderately Negative*, *Leaning Positive*, etc.
-- **Context-Aware Scoring**: Understands contrastive conjunctions ("but", "however") and shifts in tone within a single sentence.
-- **Intensity Detection**: Calculates the intensity of the sentiment (e.g., "good" vs "phenomenal").
+- **10-Tier Granular Analysis**: Goes beyond positive/negative. Detects nuance on a 0-100% scale.
+- **Cross-Platform Discrepancy Alerts**: Detects and visually warns if a product is strangely rated highly on one site but hated on another.
+- **Short-Review Indian Market Optimization**: Heuristically scores short generic reviews ("Good", "Awesome") accurately to reflect true product sentiment mathematically without UI clutter.
 
-### 🔍 Deep Understanding
-- **Aspect Extraction**: Automatically identifies product aspects (e.g., "battery life", "build quality", "customer service") using hybrid regex and POS tagging.
-- **Humor & Sarcasm Detection**: Identifies irony, exaggeration, and humorous elements in reviews.
-- **Contradiction Analysis**: flags conflicting statements (e.g., "The design is great but the build is cheap") and calculates a contradiction score.
+### 🔍 Deep Understanding & Auth Filter
+- **Authenticity Filter**: Automatically cleans dataset by dropping exact duplicates, scam links, and keyboard smashes.
+- **Aspect Extraction**: Automatically identifies product aspects (e.g., "battery life", "build quality") using hybrid regex and POS tagging.
+- **Humor & Contradiction Detection**: Flags conflicting statements ("The design is great but the build is cheap").
 
-### 📊 Interactive Visualization
-- **Sentiment Spectrum**: Visual bar showing exactly where the sentiment falls on the 0-100% scale.
-- **Dynamic Word Clouds**: Visual representation of key phrases.
-- **Aspect Sentiment Charts**: Horizontal bar charts breaking down satisfaction by feature.
-- **Interactive Gauges**: Real-time visualization of overall satisfaction and specific metrics.
+### 📊 Interactive Dashboard
+- **Segmented Final Ratings**: Unified Verdict displaying individual platform breakdown alongside the combined rating.
+- **Ranked Feature Tags**: Visual horizontal bar charts breaking down satisfaction by feature.
+- **Trend Alerts**: Flags sudden dips in recent review scores compared to historical averages.
 
 ## 🛠 Installation
 
@@ -106,8 +108,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- [Hugging Face Transformers](https://huggingface.co/transformers/)
-- [Sentence-Transformers](https://www.sbert.net/)
-- [Streamlit](https://streamlit.io/)
-- [spaCy](https://spacy.io/)
-- [NLTK](https://www.nltk.org/)
+- [Hugging Face Transformers](https://huggingface.co/transformers/) (Core Sentiment Engine)
+- [Sentence-Transformers](https://www.sbert.net/) (Vector Embeddings)
+- [Streamlit](https://streamlit.io/) (Interactive Dashboard)
+- [Playwright](https://playwright.dev/) (Headless E-commerce Web Scraping)
+- [BeautifulSoup 4](https://www.crummy.com/software/BeautifulSoup/bs4/doc/) (Parsing HTML DOM elements)
+- [spaCy](https://spacy.io/) & [NLTK](https://www.nltk.org/) (Linguistic Processing)

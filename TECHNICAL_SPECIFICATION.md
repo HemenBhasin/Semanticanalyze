@@ -4,16 +4,24 @@
 
 ```mermaid
 graph TD
-    A[User Interface] -->|Review Text| B[Streamlit App]
-    B -->|Preprocess Text| C[Semantic Analyzer]
-    C -->|Generate Embeddings| D[Sentence-BERT]
-    C -->|Extract Aspects| E[NLP Pipeline]
-    C -->|Analyze Sentiment| F[DistilBERT]
-    D -->|Semantic Vectors| G[Aspect-Sentiment Mapping]
-    E -->|Aspects| G
-    F -->|Sentiment Scores| G
-    G -->|Structured Results| H[Visualization]
-    H -->|Interactive Dashboard| A
+    A[User Interface] -->|Amazon URL (Tab 1)| B[Streamlit App]
+    A[User Interface] -->|Review Text (Tab 2)| M[Streamlit App]
+    
+    B -->|URL Trigger| C[Scraper Service]
+    B -->|Cross-Reference| D[Product Matcher]
+    D -->|Yahoo Search| E[Flipkart URL]
+    E --> C
+    C -->|Raw Playwright HTML| F[Filter Service]
+    F -->|Clean Dataset| G[Semantic Analyzer Batch]
+    
+    M -->|Raw Text Processing| G
+    
+    G -->|Extract Aspects| H[NLP Pipeline]
+    G -->|Granular Sentiment| I[DistilBERT]
+    H -->|Ranked Features| J[Verdict Engine]
+    I -->|Sentiment Scores| J
+    J -->|Aggregated Scoring / Single Result| K[Visualization Dashboard]
+    K -->|Interactive Dashboard| A
 ```
 
 ## 2. System Components
@@ -21,25 +29,37 @@ graph TD
 ### 2.1 Frontend
 - **Framework**: Streamlit
 - **Key Features**:
-  - Interactive text input for product reviews
-  - Real-time processing feedback
-  - Responsive visualization components
-  - Mobile-friendly interface
+  - Live Amazon URL ingestion and dual-platform processing loaders
+  - Unified cross-platform metrics and final verdict Hero sections
+  - Interactive test suite for single review deep-dives (Tab 2)
 
-### 2.2 Backend
-- **Core Libraries**:
-  - Sentence-Transformers (all-MiniLM-L6-v2) for semantic embeddings
-  - Transformers (DistilBERT) for sentiment analysis
-  - spaCy for NLP processing
-  - NLTK for text preprocessing
+### 2.2 Backend Operations
+- **Data Acquisition**: Playwright via Asyncio for concurrent browser tabs
+- **Matching Service**: BeautifulSoup4 parsing Yahoo Search for platform equivalents
+- **NLP Processing**:
+  - Sentence-Transformers (all-MiniLM-L6-v2)
+  - Transformers (DistilBERT base fine-tuned on SST-2)
+  - spaCy (Dependency Injection & POS Tagging)
 
 ### 2.3 Data Flow
-1. User submits a product review through the Streamlit interface
-2. Text is preprocessed (tokenization, stopword removal, lemmatization)
-3. Semantic embeddings are generated using Sentence-BERT
-4. Key aspects are extracted using NLP techniques
-5. Sentiment is analyzed for each aspect
-6. Results are formatted and returned to the UI
+
+**Workflow A: Live URL Aggregator (Tab 1)**
+1. User submits a product URL (Amazon) through the Streamlit interface.
+2. The `Scraper Service` launches headless Playwright browsers to fetch Amazon reviews.
+3. Concurrently, the `Product Matcher` queries Yahoo to find the equivalent product on Flipkart.
+4. The `Scraper Service` dynamically scales to fetch Flipkart reviews in parallel.
+5. All fetched reviews are parsed by the `Filter Service` to drop spam, duplicates, and bots.
+6. The cleaned batch enters the `Semantic Analyzer` pipeline.
+7. Sentiments and Aspects are extracted via DistilBERT and spaCy.
+8. The `Verdict Engine` compiles the individual metrics into a unified Cross-Platform rating system.
+9. Results are rendered continuously to the UI Dashboard.
+
+**Workflow B: Single Review Analyzer (Tab 2)**
+1. User pastes a raw paragraph/review text snippet directly into the input box.
+2. The text completely bypasses the scraper/URL pipelines.
+3. It passes straight into the `Semantic Analyzer` pipeline.
+4. Sentiments, Aspects, Humorous Intent, and Contradictions are mathematically analyzed.
+5. The result returns instantly to the Dashboard displaying the exact NLP breakdown.
 
 ## 3. Dataset
 

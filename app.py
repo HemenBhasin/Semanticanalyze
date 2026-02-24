@@ -5,9 +5,13 @@ import plotly.express as px
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import json
-from semantic_analyzer import analyzer
 from config import SENTENCE_TRANSFORMER_MODEL, SENTIMENT_MODEL
 import numpy as np
+
+@st.cache_resource(show_spinner="⏳ Warming up heavy NLP Models (One-time load)...")
+def get_analyzer():
+    from semantic_analyzer import SemanticReviewAnalyzer
+    return SemanticReviewAnalyzer()
 
 # Page configuration
 st.set_page_config(
@@ -730,13 +734,212 @@ def display_aspect_analysis(aspects):
                 
                 st.plotly_chart(fig, use_container_width=True)
 
+import asyncio
+from scraper_service import ScraperService
+from verdict_engine import verdict_engine
+
+def display_dashboard(aggregated_data):
+    """Display the unified dashboard for aggregated reviews."""
+    if not aggregated_data:
+        st.warning("No data to display.")
+        return
+        
+    unified_score = aggregated_data['unified_score']
+    verdict = aggregated_data['verdict']
+    recent_trends = aggregated_data.get('recent_trends', {})
+    platform_stats = aggregated_data.get('platform_stats', {})
+    
+    st.markdown("---")
+    st.header("📊 Unified Product Dashboard")
+    
+    if recent_trends.get('has_issue'):
+        st.error(f"⚠️ **RECENT BATCH ALERT**: {recent_trends['message']} (Recent Score: {recent_trends['recent_score']:.2f} vs Historical: {recent_trends['historical_score']:.2f})")
+    elif 'message' in recent_trends and "tracking closely" in recent_trends['message'].lower():
+        st.success(f"✅ **Consistent Quality**: {recent_trends['message']}")
+        
+    if platform_stats.get('discrepancy_alert'):
+        st.error(f"🚨 **CROSS-PLATFORM WARNING**: {platform_stats['discrepancy_alert']}")
+        
+    # Hero Section: Verdict & Score
+    col1, col2 = st.columns([2, 1])
+    
+    # Color logic for verdict
+    if unified_score >= 0.65:
+        verdict_color = "#00ff88"
+    elif unified_score >= 0.5:
+        verdict_color = "#ffaa00"
+    else:
+        verdict_color = "#ff3366"
+        
+    with col1:
+        st.markdown(f"""
+        <div style="padding: 2rem; border-radius: 12px; background: rgba(20, 50, 100, 0.4); border-left: 5px solid {verdict_color};">
+            <h2 style="margin-top: 0; color: #e0e0e0;">Final Verdict</h2>
+            <h1 style="color: {verdict_color}; margin: 0; font-size: 3rem; text-shadow: none;">{verdict}</h1>
+            <p style="color: #b0b0b0; font-size: 1.1rem; margin-top: 0.5rem;">Based on {aggregated_data['total_reviews']} analyzed reviews</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with col2:
+        st.markdown(f"""
+        <div class="metric-box" style="height: 100%; display: flex; flex-direction: column; justify-content: center;">
+            <div class="metric-value" style="font-size: 4rem;">{unified_score:.0%}</div>
+            <div class="metric-label">Combined Rating</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    # Cross Platform Split Ratings
+    amz_score = platform_stats.get('amazon_score')
+    fk_score = platform_stats.get('flipkart_score')
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_amz, col_fk = st.columns(2)
+    
+    if amz_score is not None:
+        with col_amz:
+            st.markdown(f"""
+            <div style="padding: 1.5rem; border-radius: 8px; background: rgba(255, 153, 0, 0.1); border: 1px solid rgba(255, 153, 0, 0.3); text-align: center;">
+                <h3 style="color: #ff9900; margin-bottom: 0.5rem;">Amazon Rating</h3>
+                <h2 style="font-size: 2.5rem; margin: 0; color: #e0e0e0;">{amz_score:.0%}</h2>
+                <p style="color: #aaa; margin-top: 0.5rem;">{platform_stats['amazon_count']} Reviews Analyzed</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+    if fk_score is not None:
+        with col_fk:
+            st.markdown(f"""
+            <div style="padding: 1.5rem; border-radius: 8px; background: rgba(40, 116, 240, 0.1); border: 1px solid rgba(40, 116, 240, 0.3); text-align: center;">
+                <h3 style="color: #2874f0; margin-bottom: 0.5rem;">Flipkart Rating</h3>
+                <h2 style="font-size: 2.5rem; margin: 0; color: #e0e0e0;">{fk_score:.0%}</h2>
+                <p style="color: #aaa; margin-top: 0.5rem;">{platform_stats['flipkart_count']} Reviews Analyzed</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+    st.markdown("---")
+    
+    # Recent Sentiment Trend Line
+    if recent_trends.get('trend_data') and len(recent_trends['trend_data']) > 1:
+        st.subheader("📈 Recent Sentiment Trend")
+        
+        trend_df = pd.DataFrame(recent_trends['trend_data'])
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=trend_df['date'],
+            y=trend_df['score'] * 100,
+            mode='lines+markers',
+            line=dict(color='#00ff88', width=3),
+            marker=dict(size=8, color='#0a0e27', line=dict(color='#00ff88', width=2)),
+            hovertemplate='Date: %{x}<br>Score: %{y:.1f}%<extra></extra>'
+        ))
+        
+        # Add historical average line for comparison
+        if 'historical_score' in recent_trends:
+            fig.add_hline(
+                y=recent_trends['historical_score'] * 100, 
+                line_dash="dash", 
+                line_color="#ffaa00",
+                annotation_text="Historical Avg",
+                annotation_position="bottom right"
+            )
+            
+        fig.update_layout(
+            paper_bgcolor='rgba(10, 14, 39, 0)',
+            plot_bgcolor='rgba(10, 14, 39, 0.4)',
+            font={'color': '#e0e0e0'},
+            height=250,
+            margin=dict(l=20, r=20, t=10, b=20),
+            xaxis=dict(showgrid=True, gridcolor='rgba(100, 200, 255, 0.1)'),
+            yaxis=dict(
+                title="Sentiment (%)", 
+                range=[0, 100], 
+                showgrid=True, 
+                gridcolor='rgba(100, 200, 255, 0.1)'
+            ),
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("---")
+    
+    # Pros and Cons
+    st.subheader("💡 Top Pros & Cons")
+    pro_col, con_col = st.columns(2)
+    
+    with pro_col:
+        st.markdown("<h3 style='color: #00ff88;'>👍 Pros (Most Liked)</h3>", unsafe_allow_html=True)
+        if aggregated_data['pros']:
+            for pro in aggregated_data['pros']:
+                st.markdown(f"""
+                <div class="aspect-card" style="border-left-color: #00ff88; padding: 1rem; margin: 0.5rem 0;">
+                    <strong style="font-size: 1.1rem; color: #e0e0e0;">{pro['aspect']}</strong> 
+                    <span style="color: #00ff88;">({pro['score']:.0%})</span>
+                    <br><span style="font-size: 0.9rem; color: #aaa;">Mentions: {max(pro['positive_mentions'], pro['total_mentions'])}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No standout positive features identified.")
+            
+    with con_col:
+        st.markdown("<h3 style='color: #ff3366;'>👎 Cons (Most Disliked)</h3>", unsafe_allow_html=True)
+        if aggregated_data['cons']:
+            for con in aggregated_data['cons']:
+                st.markdown(f"""
+                <div class="aspect-card" style="border-left-color: #ff3366; padding: 1rem; margin: 0.5rem 0;">
+                    <strong style="font-size: 1.1rem; color: #e0e0e0;">{con['aspect']}</strong> 
+                    <span style="color: #ff3366;">({con['score']:.0%})</span>
+                    <br><span style="font-size: 0.9rem; color: #aaa;">Mentions: {max(con['negative_mentions'], con['total_mentions'])}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No standout negative features identified.")
+            
+    st.markdown("---")
+    
+    # General Extracted Aspects Chart
+    st.subheader("🎯 Feature Rankings")
+    tags = aggregated_data['ranked_tags']
+    if tags:
+        df = pd.DataFrame(tags)
+        
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            y=df['aspect'],
+            x=df['score'] * 100,
+            orientation='h',
+            marker=dict(
+                color=[get_sentiment_color_by_score(s) for s in df['score']],
+                line=dict(color='rgba(0, 0, 0, 0.3)', width=1)
+            ),
+            text=[f"{s*100:.1f}%" for s in df['score']],
+            textposition='outside',
+            textfont=dict(color='#e0e0e0'),
+            hovertemplate='<b>%{y}</b><br>Score: %{x:.1f}%<extra></extra>'
+        ))
+        
+        fig.update_layout(
+            paper_bgcolor='rgba(10, 14, 39, 0)',
+            plot_bgcolor='rgba(10, 14, 39, 0)',
+            font={'color': '#e0e0e0'},
+            height=max(300, len(tags) * 50),
+            margin=dict(l=0, r=80, t=20, b=40),
+            xaxis=dict(
+                title="Sentiment Score (%)",
+                range=[0, 100],
+                showgrid=True,
+                gridcolor='rgba(100, 200, 255, 0.1)',
+            ),
+            yaxis={'autorange': 'reversed'}
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
 def main():
     """Main Streamlit app function."""
+    analyzer = get_analyzer()
     # Header section
     col1, col2 = st.columns([3, 1])
     with col1:
         st.title("✨ Semantic Product Review Analyzer")
-        st.markdown("*Advanced NLP-powered sentiment analysis with aspect extraction*")
+        st.markdown("*Live Web Scraper & Contextual NLP Aggregator*")
     
     st.markdown("---")
     
@@ -752,119 +955,219 @@ def main():
             - **Embeddings:** `all-MiniLM-L6-v2` 
             - **Sentiment:** `distilbert-base-uncased-finetuned-sst-2-english` 
             - **NLP:** `spaCy` with custom aspect extraction
+            - **Scraping:** `Playwright`
             """)
         with col2:
             st.markdown("""
             ### 🔄 Analysis Pipeline
-            1. **Text Preprocessing** - Cleaning & normalization
-            2. **Aspect Extraction** - Identifying key product aspects
-            3. **Granular Sentiment Analysis** - 10-tier classification (0-100%)
-            4. **Humor & Sarcasm Detection** - Identifying irony and exaggeration
-            5. **Contradiction Analysis** - Finding conflicting statements
-            6. **Visualization** - Interactive charts & insights
+            1. **Live Scraping** - Fetches reviews from Amazon (more sites coming soon).
+            2. **Aspect Extraction** - Identifying key product aspects.
+            3. **Granular Sentiment Analysis** - 10-tier classification (0-100%).
+            4. **Aggregation** - Combining batch results into Pros & Cons.
+            5. **Final Verdict** - Actionable buying advice.
             """)
     
     st.markdown("---")
     
-    # Input section
-    st.header("📝 Enter a Product Review")
-    review_text = st.text_area(
-        "Paste your product review here...",
-        height=150,
-        placeholder="Example: The camera quality is amazing but the battery drains quickly. The design feels premium though.",
-        label_visibility="collapsed"
-    )
+    tab1, tab2 = st.tabs(["🔗 URL Aggregator (Live Feed)", "📝 Single Review Analyzer"])
     
-    col1, col2, col3 = st.columns([1, 1, 2])
-    with col1:
-        analyze_btn = st.button("🚀 Analyze Review", type="primary", use_container_width=True)
-    with col2:
-        clear_btn = st.button("🔄 Clear", use_container_width=True)
-    
-    if clear_btn:
-        st.rerun()
-    
-    if analyze_btn and review_text.strip():
-        with st.spinner("🔬 Analyzing your review..."):
-            # Analyze the review
-            analysis_result = analyzer.analyze_review(review_text)
+    with tab1:
+        st.header("🌐 Enter Amazon Product URL")
+        product_url = st.text_input(
+            "Product URL",
+            placeholder="e.g. https://www.amazon.in/dp/B08L5T...",
+            label_visibility="collapsed"
+        )
+        
+        col_btn1, col_btn2, _ = st.columns([1, 1, 2])
+        with col_btn1:
+            url_analyze_btn = st.button("🚀 Scrape & Analyze", type="primary", use_container_width=True)
             
-            # Display results
-            st.markdown("---")
-            st.header("📊 Analysis Results")
-            
-            # Overall sentiment section
-            overall_sentiment = analysis_result['overall_sentiment']
-            granular_label = overall_sentiment.get('granular_label', overall_sentiment['label'])
-            sentiment_emoji = display_sentiment_emoji(granular_label)
-            sentiment_color = get_sentiment_color(granular_label)
-            
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                st.markdown(f"""
-                <h2 style="color: {sentiment_color};">
-                    {sentiment_emoji} {granular_label.upper()}
-                </h2>
-                <p style="font-size: 1.2rem; color: #b0b0b0;">
-                    <strong>Score:</strong> {overall_sentiment['score']:.1%} | 
-                    <strong>Intensity:</strong> {overall_sentiment.get('intensity', 0):.0%}
-                </p>
-                """, unsafe_allow_html=True)
-            
-            with col2:
-                # Display metrics
-                st.markdown(f"""
-                <div class="metric-box">
-                    <div class="metric-value">{overall_sentiment['score']:.0%}</div>
-                    <div class="metric-label">Overall Score</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Sentiment Spectrum
-            st.markdown("### 📊 Sentiment Spectrum")
-            spectrum_fig = create_sentiment_spectrum(overall_sentiment['score'], granular_label)
-            st.plotly_chart(spectrum_fig, use_container_width=True)
-            
-            # Sentiment gauge
-            st.markdown("### 🎯 Sentiment Gauge")
-            fig_gauge = create_sentiment_gauge(overall_sentiment['score'], overall_sentiment['label'])
-            st.plotly_chart(fig_gauge, use_container_width=True)
-            
-            st.markdown("---")
-            
-            # Humor Detection
-            humor_data = analysis_result.get('humor_analysis', {})
-            if humor_data:
-                display_humor_analysis(humor_data)
+        if url_analyze_btn and product_url.strip():
+            with st.status("🔄 Live Analysis in Progress...", expanded=True) as status:
+                st.write("🌐 Deploying Playwright Scraper to Amazon... (Fetching Diverse Reviews)")
+                
+                # Import necessary cross-platform modules
+                import urllib.parse
+                from product_matcher import ProductMatcher
+                
+                scraper = ScraperService()
+                
+                import sys
+                if sys.platform == 'win32':
+                    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                # Create a new event loop to run async playwright code
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                # 1. Scrape Amazon
+                scrape_result = loop.run_until_complete(scraper.scrape_amazon_reviews(product_url))
+                amazon_reviews = scrape_result.get('reviews', [])
+                product_title = scrape_result.get('product_title', "")
+                
+                # 2. Extract Title & Find Flipkart Match
+                if not product_title:
+                    try:
+                        import requests
+                        from bs4 import BeautifulSoup
+                        import re
+                        
+                        # Out-of-band network fetch for pristine title tag
+                        headers = {
+                            'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                            'Accept-Language': 'en-IN,en-US;q=0.9,en;q=0.8'
+                        }
+                        resp = requests.get(product_url, headers=headers, timeout=10)
+                        soup = BeautifulSoup(resp.content, 'html.parser')
+                        if soup.title and "Amazon" in soup.title.text:
+                            raw_title = soup.title.text.split(':')[-1].replace('Customer reviews', '').strip()
+                            if len(raw_title) > 5 and raw_title.lower() not in ['electronics', 'computers', 'smartphones', 'clothing']:
+                                product_title = raw_title
+                                
+                        # Final Fallback: URL Path string parser
+                        if not product_title:
+                            parsed = urllib.parse.urlparse(product_url)
+                            path = parsed.path.strip('/')
+                            if '/dp/' in parsed.path or '/product/' in parsed.path:
+                                raw_path = path.split('/')[0].replace('-', ' ')
+                                if raw_path.lower() not in ['electronics', 'computers', 'smartphones', 'clothing']:
+                                    product_title = re.sub(r'(?i)\b(storage|subwoofer|environment|combo|bundle|deals|deal|mobile)\b', '', raw_path).strip()
+                    except Exception as e:
+                        st.write("Could not parse product title for cross-platform matching.")
+                        
+                flipkart_reviews = []
+                if product_title:
+                    st.write(f"🔍 Searching Yahoo for Flipkart equivalent: '{product_title}'...")
+                    matcher = ProductMatcher()
+                    flipkart_url = loop.run_until_complete(matcher.get_flipkart_url(product_title))
+                    
+                    if flipkart_url:
+                        st.write("📦 Found Flipkart Match! Deploying Scraper to Flipkart...")
+                        flipkart_reviews = loop.run_until_complete(scraper.scrape_flipkart_reviews(flipkart_url))
+                    else:
+                        st.write("⚠️ Could not locate corresponding Flipkart product.")
+                
+                loop.close()
+                
+                # 3. Combine reviews
+                reviews = amazon_reviews + flipkart_reviews
+                
+                if not reviews:
+                    status.update(label="❌ Scraping Failed", state="error", expanded=True)
+                    st.error("Could not fetch reviews. Amazon may have triggered a Captcha block, or the URL is invalid.")
+                else:
+                    st.write(f"✅ Successfully scraped {len(reviews)} reviews.")
+                    
+                    from filter_service import FilterService
+                    st.write("🛡️ Running Authenticity Filter (Removing bots/duplicates)...")
+                    filter_engine = FilterService()
+                    reviews, filtered_count = filter_engine.filter_reviews(reviews)
+                    
+                    if filtered_count > 0:
+                        st.info(f"🗑️ Filtered out {filtered_count} suspected fake/duplicate reviews.")
+                    
+                    st.write(f"🧠 Running deep semantic inference on {len(reviews)} authentic reviews...")
+                    
+                    analyzed_reviews = analyzer.analyze_batch(reviews)
+                    
+                    st.write("✨ Generating Insights & Verdict...")
+                    aggregated_data = verdict_engine.aggregate_batch(analyzed_reviews)
+                    
+                    status.update(label="✅ Analysis Complete!", state="complete", expanded=False)
+                    
+            if reviews:
+                display_dashboard(aggregated_data)
+                
+                # Optional: Show raw scraped reviews
+                with st.expander("Raw Fetched Reviews"):
+                    st.json(reviews)
+                    
+        elif url_analyze_btn:
+            st.warning("⚠️ Please enter a product URL to analyze.")
+
+    with tab2:
+        st.header("📝 Enter a Single Product Review")
+        review_text = st.text_area(
+            "Paste your product review here...",
+            height=150,
+            placeholder="Example: The camera quality is amazing but the battery drains quickly.",
+            label_visibility="collapsed"
+        )
+        
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            analyze_btn = st.button("🚀 Analyze Text", type="primary", use_container_width=True)
+        with col2:
+            clear_btn = st.button("🔄 ClearText", use_container_width=True)
+        
+        if clear_btn:
+             st.rerun()
+             
+        if analyze_btn and review_text.strip():
+            with st.spinner("🔬 Analyzing your review..."):
+                analysis_result = analyzer.analyze_review(review_text)
+                
                 st.markdown("---")
-            
-            # Contradictions
-            contradiction_data = analysis_result.get('contradiction_analysis', {})
-            if contradiction_data:
-                display_contradictions(contradiction_data)
+                st.header("📊 Analysis Results")
+                
+                overall_sentiment = analysis_result['overall_sentiment']
+                granular_label = overall_sentiment.get('granular_label', overall_sentiment['label'])
+                sentiment_emoji = display_sentiment_emoji(granular_label)
+                sentiment_color = get_sentiment_color(granular_label)
+                
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.markdown(f"""
+                    <h2 style="color: {sentiment_color};">
+                        {sentiment_emoji} {granular_label.upper()}
+                    </h2>
+                    <p style="font-size: 1.2rem; color: #b0b0b0;">
+                        <strong>Score:</strong> {overall_sentiment['score']:.1%} | 
+                        <strong>Intensity:</strong> {overall_sentiment.get('intensity', 0):.0%}
+                    </p>
+                    """, unsafe_allow_html=True)
+                with col2:
+                    st.markdown(f"""
+                    <div class="metric-box">
+                        <div class="metric-value">{overall_sentiment['score']:.0%}</div>
+                        <div class="metric-label">Overall Score</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown("### 📊 Sentiment Spectrum")
+                spectrum_fig = create_sentiment_spectrum(overall_sentiment['score'], granular_label)
+                st.plotly_chart(spectrum_fig, use_container_width=True)
+                
+                st.markdown("### 🎯 Sentiment Gauge")
+                fig_gauge = create_sentiment_gauge(overall_sentiment['score'], overall_sentiment['label'])
+                st.plotly_chart(fig_gauge, use_container_width=True)
+                
+                humor_data = analysis_result.get('humor_analysis', {})
+                if humor_data:
+                    display_humor_analysis(humor_data)
+                    st.markdown("---")
+                
+                contradiction_data = analysis_result.get('contradiction_analysis', {})
+                if contradiction_data:
+                    display_contradictions(contradiction_data)
+                    st.markdown("---")
+                
+                aspects = analysis_result.get('aspects', [])
+                if aspects:
+                    display_aspect_analysis(aspects)
+                    st.markdown("---")
+                
+                st.subheader("📊 Word Cloud Visualization")
+                wordcloud_fig = create_wordcloud(review_text)
+                if wordcloud_fig:
+                    st.pyplot(wordcloud_fig, use_container_width=True)
+                
                 st.markdown("---")
-            
-            # Display aspect analysis
-            aspects = analysis_result.get('aspects', [])
-            if aspects:
-                display_aspect_analysis(aspects)
-                st.markdown("---")
-            
-            # Word cloud section
-            st.subheader("📊 Word Cloud Visualization")
-            wordcloud_fig = create_wordcloud(review_text)
-            if wordcloud_fig:
-                st.pyplot(wordcloud_fig, use_container_width=True)
-            
-            st.markdown("---")
-            
-            # Raw JSON output (collapsible)
-            with st.expander("🔧 View Raw Analysis Data", expanded=False):
-                st.json(analysis_result)
-    
-    elif analyze_btn and not review_text.strip():
-        st.warning("⚠️ Please enter a review to analyze.")
+                with st.expander("🔧 View Raw Analysis Data", expanded=False):
+                    st.json(analysis_result)
+        elif analyze_btn:
+            st.warning("⚠️ Please enter a review to analyze.")
 
 if __name__ == "__main__":
     main()

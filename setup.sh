@@ -71,6 +71,11 @@ if [ -f "requirements.txt" ]; then
     echo "Installing Python packages..."
     install_with_retry pip install -r requirements.txt
 
+    # Install Playwright Chromium binaries
+    echo "Installing Playwright core browsers and dependencies..."
+    install_with_retry python -m playwright install chromium
+    install_with_retry python -m playwright install-deps
+
     # Install spaCy model
     echo "Installing spaCy model..."
     python -m spacy download en_core_web_sm
