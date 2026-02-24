@@ -1,0 +1,5 @@
+# This file is used by Streamlit Cloud to install system-level dependencies.
+# We need these to run the Playwright headless browsers for Web Scraping.
+
+chromium
+chromium-driver

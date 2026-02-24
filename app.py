@@ -7,6 +7,18 @@ import matplotlib.pyplot as plt
 import json
 from config import SENTENCE_TRANSFORMER_MODEL, SENTIMENT_MODEL
 import numpy as np
+import os
+
+# --- CRITICAL: Streamlit Cloud Auto-Install Playwright Hooks ---
+@st.cache_resource(show_spinner="⚙️ Preparing Headless Scraping Engine...")
+def ensure_playwright_browsers():
+    """Forces the Playwright Chromium binaries to install if they are missing on deployment."""
+    os.system("playwright install chromium")
+    os.system("playwright install-deps chromium")
+    return True
+
+# Ensure this runs exactly once on Boot when the app restarts on Streamlit servers
+ensure_playwright_browsers()
 
 @st.cache_resource(show_spinner="⏳ Warming up heavy NLP Models (One-time load)...")
 def get_analyzer():

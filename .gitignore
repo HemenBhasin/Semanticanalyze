@@ -155,6 +155,7 @@ playwright-log.txt
 *.html
 *.txt
 !requirements.txt
+!packages.txt
 
 # NLP & Data Drops
 data/
