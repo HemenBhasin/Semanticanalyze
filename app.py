@@ -9,7 +9,15 @@ from config import SENTENCE_TRANSFORMER_MODEL, SENTIMENT_MODEL
 import numpy as np
 import os
 
-# --- CRITICAL: Streamlit Cloud Auto-Install Playwright Hooks ---
+# --- CRITICAL: Page config MUST be the first Streamlit command ---
+st.set_page_config(
+    page_title="Semantic Product Review Analyzer",
+    page_icon="✨",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# --- Streamlit Cloud Auto-Install Playwright Hooks ---
 @st.cache_resource(show_spinner="⚙️ Preparing Headless Scraping Engine...")
 def ensure_playwright_browsers():
     """Forces the Playwright Chromium binaries to install if they are missing on deployment."""
@@ -24,14 +32,6 @@ ensure_playwright_browsers()
 def get_analyzer():
     from semantic_analyzer import SemanticReviewAnalyzer
     return SemanticReviewAnalyzer()
-
-# Page configuration
-st.set_page_config(
-    page_title="Semantic Product Review Analyzer",
-    page_icon="✨",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
 
 # Custom CSS for modern dark theme
 st.markdown("""
