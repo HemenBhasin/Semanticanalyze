@@ -22,7 +22,6 @@ st.set_page_config(
 def ensure_playwright_browsers():
     """Forces the Playwright Chromium binaries to install if they are missing on deployment."""
     os.system("playwright install chromium")
-    os.system("playwright install-deps chromium")
     return True
 
 # Ensure this runs exactly once on Boot when the app restarts on Streamlit servers

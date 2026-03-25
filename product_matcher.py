@@ -25,9 +25,8 @@ class ProductMatcher:
         if len(words) > 8:
             clean_title = " ".join(words[:8])
             
-        logger.info(f"Searching Yahoo for: {clean_title}")
+        logger.info(f"Searching DuckDuckGo for: {clean_title}")
         query = f"site:flipkart.com {clean_title}"
-        search_url = f"https://search.yahoo.com/search?p={urllib.parse.quote_plus(query)}"
         
         try:
             def sync_search():
@@ -36,6 +35,8 @@ class ProductMatcher:
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.5',
                 }
+                # DuckDuckGo HTML endpoint
+                search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(query)}"
                 resp = requests.get(search_url, headers=headers, timeout=10)
                 resp.raise_for_status()
                 return resp.text
@@ -43,15 +44,15 @@ class ProductMatcher:
             html = await asyncio.to_thread(sync_search)
             
             soup = BeautifulSoup(html, 'html.parser')
-            for a_tag in soup.find_all('a'):
+            for a_tag in soup.find_all('a', class_='result__url'):
                 href = a_tag.get('href', '')
                 
-                # Yahoo wraps external links in its own redirector
-                if 'RU=' in href:
-                    href = urllib.parse.unquote(href.split('RU=')[1].split('/R')[0])
+                # DuckDuckGo sometimes wraps in '//duckduckgo.com/l/?uddg='
+                if 'uddg=' in href:
+                    href = urllib.parse.unquote(href.split('uddg=')[1].split('&')[0])
                     
                 if 'flipkart.com' in href and ('/p/' in href or '/product/' in href):
-                    logger.info(f"Found Flipkart match: {href}")
+                    logger.info(f"Found Flipkart match via DDG: {href}")
                     # Clean the tracking parameters
                     clean_fk_url = href.split('?')[0]
                     if 'pid=' in href:

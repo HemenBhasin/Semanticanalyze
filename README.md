@@ -6,7 +6,7 @@ A powerful, next-generation NLP tool for analyzing product reviews with granular
 
 ### 🌐 Live Cross-Platform Web Scraper
 - **Universal URL Support**: Paste a single Amazon link, and the engine dynamically fetches reviews.
-- **Auto-Matcher**: Automatically searches Yahoo for the equivalent product on Flipkart to scrape both platforms concurrently.
+- **Auto-Matcher**: Automatically searches DuckDuckGo for the equivalent product on Flipkart to scrape both platforms concurrently.
 - **Anti-Bot Defenses**: Headless Playwright integration with stealth scripts, ad-blocking, parallel tabs, and diverse sorting (Recent/Top) proxying to bypass rigorous e-commerce captchas.
 
 ### 🧠 Advanced Sentiment Engine
@@ -53,9 +53,12 @@ A powerful, next-generation NLP tool for analyzing product reviews with granular
    python -m nltk.downloader punkt stopwords wordnet
    ```
 
+5. **Cloud Deployment (Streamlit Cloud):**
+   The repository includes a `packages.txt` file configured to automatically install Playwright's `chromium` and `chromium-driver` system dependencies upon boot in Streamlit Community Cloud.
+
 ## 🚦 Usage
 
-1. **Launch the Application:**
+1. **Launch the Application Locally:**
    ```bash
    streamlit run app.py
    ```
@@ -87,6 +90,7 @@ semantic-review-analyzer/
 ├── semantic_analyzer.py # Core NLP engine (Aspect extraction, Sentiment logic, Humor detection)
 ├── config.py            # Configuration (Model names, Regex patterns)
 ├── requirements.txt     # Python dependencies
+├── packages.txt         # Streamlit Cloud OS-level dependencies (Chromium binaries)
 └── README.md            # Documentation
 ```
 

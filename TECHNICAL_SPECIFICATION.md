@@ -9,7 +9,7 @@ graph TD
     
     B -->|URL Trigger| C[Scraper Service]
     B -->|Cross-Reference| D[Product Matcher]
-    D -->|Yahoo Search| E[Flipkart URL]
+    D -->|DuckDuckGo HTML Search| E[Flipkart URL]
     E --> C
     C -->|Raw Playwright HTML| F[Filter Service]
     F -->|Clean Dataset| G[Semantic Analyzer Batch]
@@ -35,7 +35,7 @@ graph TD
 
 ### 2.2 Backend Operations
 - **Data Acquisition**: Playwright via Asyncio for concurrent browser tabs
-- **Matching Service**: BeautifulSoup4 parsing Yahoo Search for platform equivalents
+- **Matching Service**: BeautifulSoup4 parsing DuckDuckGo HTML Search for platform equivalents
 - **NLP Processing**:
   - Sentence-Transformers (all-MiniLM-L6-v2)
   - Transformers (DistilBERT base fine-tuned on SST-2)
@@ -46,7 +46,7 @@ graph TD
 **Workflow A: Live URL Aggregator (Tab 1)**
 1. User submits a product URL (Amazon) through the Streamlit interface.
 2. The `Scraper Service` launches headless Playwright browsers to fetch Amazon reviews.
-3. Concurrently, the `Product Matcher` queries Yahoo to find the equivalent product on Flipkart.
+3. Concurrently, the `Product Matcher` queries DuckDuckGo to find the equivalent product on Flipkart.
 4. The `Scraper Service` dynamically scales to fetch Flipkart reviews in parallel.
 5. All fetched reviews are parsed by the `Filter Service` to drop spam, duplicates, and bots.
 6. The cleaned batch enters the `Semantic Analyzer` pipeline.
